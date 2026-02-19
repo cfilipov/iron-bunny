@@ -57,6 +57,7 @@ impl TestApp {
         let mut process = Command::new(binary_path)
             .env("BRUNNYLOL_DB", &db_path)
             .env("BRUNNYLOL_PORT", port.to_string())
+            .env("IRON_BUNNY_SEED_DEFAULTS", "true")
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .spawn()

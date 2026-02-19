@@ -15,6 +15,14 @@ pub enum CommandSource {
     Both,
 }
 
+/// A nested command entry (child of a parent command)
+#[derive(Debug, Clone, Serialize)]
+pub struct NestedCommandEntry {
+    pub alias: String,
+    pub url: String,
+    pub description: String,
+}
+
 /// A command entry for the API/UI
 #[derive(Debug, Clone, Serialize)]
 pub struct CommandEntry {
@@ -24,6 +32,7 @@ pub struct CommandEntry {
     pub source: CommandSource,
     pub container_name: Option<String>,
     pub has_nested: bool,
+    pub nested_commands: Vec<NestedCommandEntry>,
     pub is_error: bool,
     pub error_message: Option<String>,
 }
@@ -118,6 +127,37 @@ fn build_variable_command(url: &str, command_template: Option<&str>, description
     }
 }
 
+/// Extract nested command entries from a Command::Nested
+fn extract_nested_entries(cmd: &Command) -> Vec<NestedCommandEntry> {
+    match cmd {
+        Command::Nested { children, .. } => {
+            let mut entries: Vec<NestedCommandEntry> = children
+                .iter()
+                .map(|(alias, child)| NestedCommandEntry {
+                    alias: alias.clone(),
+                    url: child.base_url().to_string(),
+                    description: child.description().to_string(),
+                })
+                .collect();
+            entries.sort_by(|a, b| a.alias.cmp(&b.alias));
+            entries
+        }
+        _ => vec![],
+    }
+}
+
+/// Extract nested command entries from a DockerCommand
+fn extract_docker_nested_entries(dc: &DockerCommand) -> Vec<NestedCommandEntry> {
+    dc.nested
+        .iter()
+        .map(|n| NestedCommandEntry {
+            alias: n.alias.clone(),
+            url: n.url.clone(),
+            description: n.description.clone(),
+        })
+        .collect()
+}
+
 /// Build a full registry snapshot by merging YAML commands with Docker commands.
 ///
 /// Merge rules:
@@ -168,6 +208,7 @@ pub fn build_registry(
                     source: CommandSource::DockerLabel,
                     container_name: Some(container_a.clone()),
                     has_nested: false,
+                    nested_commands: vec![],
                     is_error: true,
                     error_message: Some(format!(
                         "Duplicate alias defined by containers '{}' and '{}'",
@@ -231,6 +272,7 @@ pub fn build_registry(
                     source: CommandSource::Both,
                     container_name: Some(dc.container_name.clone()),
                     has_nested: !dc.nested.is_empty(),
+                    nested_commands: extract_docker_nested_entries(dc),
                     is_error: false,
                     error_message: None,
                 });
@@ -242,6 +284,7 @@ pub fn build_registry(
             let url = cmd.base_url().to_string();
             let has_nested = matches!(cmd, Command::Nested { .. });
 
+            let nested_entries = extract_nested_entries(cmd);
             commands.insert(alias.clone(), cmd.clone());
             entries.push(CommandEntry {
                 alias: alias.clone(),
@@ -250,6 +293,7 @@ pub fn build_registry(
                 source: CommandSource::Yaml,
                 container_name: None,
                 has_nested,
+                nested_commands: nested_entries,
                 is_error: false,
                 error_message: None,
             });
@@ -278,6 +322,7 @@ pub fn build_registry(
             source: CommandSource::DockerLabel,
             container_name: Some(dc.container_name.clone()),
             has_nested: !dc.nested.is_empty(),
+            nested_commands: extract_docker_nested_entries(dc),
             is_error: false,
             error_message: None,
         });

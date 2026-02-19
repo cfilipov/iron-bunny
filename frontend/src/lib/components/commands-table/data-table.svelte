@@ -2,36 +2,74 @@
 	import * as Table from '$lib/components/ui/table';
 	import { Input } from '$lib/components/ui/input';
 	import { Badge } from '$lib/components/ui/badge';
-	import { ArrowUp, ArrowDown, ArrowUpDown, Search } from 'lucide-svelte';
+	import { ArrowUp, ArrowDown, Search } from 'lucide-svelte';
 	import { Button } from '$lib/components/ui/button';
-	import type { CommandEntry } from './types';
+	import type { CommandEntry, DisplayRow } from './types';
 
 	let { commands = [] }: { commands: CommandEntry[] } = $props();
 
 	let filterValue = $state('');
 	let sortDirection = $state<'asc' | 'desc'>('asc');
 
-	const filteredCommands = $derived(() => {
-		if (!filterValue) return commands;
-		const search = filterValue.toLowerCase();
-		return commands.filter((cmd) => {
-			return (
-				cmd.alias.toLowerCase().includes(search) ||
-				cmd.description.toLowerCase().includes(search)
-			);
-		});
-	});
+	/** Flatten commands into display rows, expanding nested children */
+	function flattenCommands(cmds: CommandEntry[]): DisplayRow[] {
+		const rows: DisplayRow[] = [];
+		for (const cmd of cmds) {
+			// Parent row
+			rows.push({
+				parent_alias: cmd.alias,
+				child_alias: '',
+				display_alias: cmd.alias,
+				description: cmd.description,
+				is_error: cmd.is_error,
+				error_message: cmd.error_message,
+				is_nested_child: false
+			});
+			// Nested child rows
+			if (cmd.has_nested && cmd.nested_commands) {
+				const sorted = [...cmd.nested_commands].sort((a, b) =>
+					a.alias.localeCompare(b.alias)
+				);
+				for (const child of sorted) {
+					rows.push({
+						parent_alias: cmd.alias,
+						child_alias: child.alias,
+						display_alias: `${cmd.alias} ${child.alias}`,
+						description: child.description,
+						is_error: false,
+						error_message: null,
+						is_nested_child: true
+					});
+				}
+			}
+		}
+		return rows;
+	}
 
-	const sortedCommands = $derived(() => {
-		const filtered = filteredCommands();
+	const displayRows = $derived(() => {
+		const rows = flattenCommands(commands);
+		// Filter
+		const filtered = filterValue
+			? rows.filter((row) => {
+					const search = filterValue.toLowerCase();
+					return (
+						row.display_alias.toLowerCase().includes(search) ||
+						row.description.toLowerCase().includes(search)
+					);
+				})
+			: rows;
+		// Sort by display_alias
 		return [...filtered].sort((a, b) => {
-			const aVal = a.alias;
-			const bVal = b.alias;
+			const aVal = a.display_alias;
+			const bVal = b.display_alias;
 			if (aVal < bVal) return sortDirection === 'asc' ? -1 : 1;
 			if (aVal > bVal) return sortDirection === 'asc' ? 1 : -1;
 			return 0;
 		});
 	});
+
+	/** Total row count (parent + children) for the unfiltered list */
+	const totalRowCount = $derived(() => flattenCommands(commands).length);
 
 	function toggleSort() {
 		sortDirection = sortDirection === 'asc' ? 'desc' : 'asc';
@@ -51,8 +89,8 @@
 			/>
 		</div>
 		<div class="text-sm text-muted-foreground">
-			{sortedCommands().length} of {commands.length}
-			{commands.length === 1 ? 'command' : 'commands'}
+			{displayRows().length} of {totalRowCount()}
+			{totalRowCount() === 1 ? 'command' : 'commands'}
 		</div>
 	</div>
 
@@ -75,34 +113,46 @@
 				</Table.Row>
 			</Table.Header>
 			<Table.Body>
-				{#if sortedCommands().length > 0}
-					{#each sortedCommands() as cmd, i (cmd.alias + ':' + i)}
+				{#if displayRows().length > 0}
+					{#each displayRows() as row, i (row.display_alias + ':' + i)}
 						<Table.Row
-							class={cmd.is_error
+							class={row.is_error
 								? 'bg-destructive/10 hover:bg-destructive/20'
 								: ''}
 						>
 							<Table.Cell>
 								<div class="flex items-center gap-2">
-									<code
-										class="text-sm font-mono"
-										style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;"
-									>
-										{cmd.alias}
-									</code>
-									{#if cmd.is_error}
-										<Badge variant="destructive">error</Badge>
+									{#if row.is_nested_child}
+										<code
+											class="text-sm font-mono text-muted-foreground"
+											style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;"
+										>
+											{row.parent_alias}
+										</code>
+										<code
+											class="text-sm font-mono"
+											style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;"
+										>
+											{row.child_alias}
+										</code>
+									{:else}
+										<code
+											class="text-sm font-mono"
+											style="font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Consolas, 'Liberation Mono', monospace;"
+										>
+											{row.display_alias}
+										</code>
 									{/if}
-									{#if cmd.has_nested}
-										<Badge variant="secondary">nested</Badge>
+									{#if row.is_error}
+										<Badge variant="destructive">error</Badge>
 									{/if}
 								</div>
 							</Table.Cell>
 							<Table.Cell>
-								{#if cmd.is_error && cmd.error_message}
-									<span class="text-destructive text-sm">{cmd.error_message}</span>
+								{#if row.is_error && row.error_message}
+									<span class="text-destructive text-sm">{row.error_message}</span>
 								{:else}
-									<span class="text-sm">{cmd.description}</span>
+									<span class="text-sm">{row.description}</span>
 								{/if}
 							</Table.Cell>
 						</Table.Row>
