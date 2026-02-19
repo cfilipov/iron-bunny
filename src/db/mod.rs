@@ -13,6 +13,9 @@ pub async fn init_db(db_path: &str) -> Result<SqlitePool> {
 
     // Create the database file if it doesn't exist (skip for in-memory databases)
     if db_path != ":memory:" && !std::path::Path::new(db_path).exists() {
+        if let Some(parent) = std::path::Path::new(db_path).parent() {
+            std::fs::create_dir_all(parent)?;
+        }
         std::fs::File::create(db_path)?;
     }
 
