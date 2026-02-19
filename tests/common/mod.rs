@@ -49,7 +49,8 @@ pub async fn create_admin_user(pool: &SqlitePool) -> (i64, String) {
 pub async fn create_test_app() -> axum::Router {
     // Use in-memory database for testing
     std::env::set_var("BRUNNYLOL_DB", ":memory:");
-    brunnylol::create_router().await
+    let (router, _state) = brunnylol::create_router().await;
+    router
 }
 
 /// Helper to add SocketAddr extension to test requests for rate limiting

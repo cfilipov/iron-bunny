@@ -10,6 +10,8 @@ use axum::{
 
 /// Middleware that adds security headers to all responses
 pub async fn security_headers(request: Request, next: Next) -> Response<Body> {
+    let is_dashboard = request.uri().path().starts_with("/dashboard");
+
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
 
@@ -38,22 +40,38 @@ pub async fn security_headers(request: Request, next: Next) -> Response<Body> {
     );
 
     // Content Security Policy - restrict content sources
-    // Allow self for scripts/styles, and htmx from unpkg CDN
-    // Note: unsafe-eval required for HTMX 1.9.12 (uses new Function() internally)
-    headers.insert(
-        header::CONTENT_SECURITY_POLICY,
-        HeaderValue::from_static(
-            "default-src 'self'; \
-             script-src 'self' https://unpkg.com 'unsafe-eval'; \
-             style-src 'self' 'unsafe-inline'; \
-             img-src 'self' data:; \
-             font-src 'self'; \
-             connect-src 'self'; \
-             frame-ancestors 'none'; \
-             base-uri 'self'; \
-             form-action 'self'"
-        ),
-    );
+    // SvelteKit dashboard needs 'unsafe-inline' for scripts; Askama pages use htmx from unpkg
+    if is_dashboard {
+        headers.insert(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(
+                "default-src 'self'; \
+                 script-src 'self' 'unsafe-inline'; \
+                 style-src 'self' 'unsafe-inline'; \
+                 img-src 'self' data:; \
+                 font-src 'self'; \
+                 connect-src 'self'; \
+                 frame-ancestors 'none'; \
+                 base-uri 'self'; \
+                 form-action 'self'"
+            ),
+        );
+    } else {
+        headers.insert(
+            header::CONTENT_SECURITY_POLICY,
+            HeaderValue::from_static(
+                "default-src 'self'; \
+                 script-src 'self' https://unpkg.com 'unsafe-eval'; \
+                 style-src 'self' 'unsafe-inline'; \
+                 img-src 'self' data:; \
+                 font-src 'self'; \
+                 connect-src 'self'; \
+                 frame-ancestors 'none'; \
+                 base-uri 'self'; \
+                 form-action 'self'"
+            ),
+        );
+    }
 
     // Permissions Policy - restrict browser features
     headers.insert(

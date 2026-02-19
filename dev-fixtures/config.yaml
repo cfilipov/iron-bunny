@@ -1,0 +1,14 @@
+- alias: g
+  url: https://www.google.com
+  command: "{url}/search?q={query}"
+  description: Search google
+
+- alias: ddg
+  url: https://www.duckduckgo.com
+  command: "{url}/?q={query}"
+  description: Search duckduckgo
+
+- alias: yt
+  url: https://www.youtube.com
+  command: "{url}/results?search_query={query}"
+  description: Search youtube

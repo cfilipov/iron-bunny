@@ -1,0 +1,44 @@
+containers:
+  # Simple command
+  - name: frigate
+    labels:
+      pomctl.routes.web.from: "https://frigate.example.com"
+      bunny.commands.fg.url: "{{ pomctl.routes.web.from }}"
+      bunny.commands.fg.description: "Launch Frigate NVR"
+
+  # Alias override + API endpoint
+  - name: frigate-api
+    labels:
+      bunny.commands.fg-api.alias: "frigate-api"
+      bunny.commands.fg-api.url: "https://frigate.example.com/api/{}"
+      bunny.commands.fg-api.description: "Frigate API"
+
+  # Nested commands
+  - name: jellyfin
+    labels:
+      bunny.commands.jf.url: "http://jellyfin.example.com"
+      bunny.commands.jf.description: "Jellyfin media player"
+      bunny.commands.jf.nested.dash.url: "http://jellyfin.example.com/web/#/dashboard"
+      bunny.commands.jf.nested.dash.description: "Jellyfin: Dashboard"
+      bunny.commands.jf.nested.lib.url: "http://jellyfin.example.com/web/#/dashboard/libraries"
+      bunny.commands.jf.nested.lib.description: "Jellyfin: Dashboard - Libraries"
+
+  # Template interpolation from other labels
+  - name: sonarr
+    labels:
+      app.name: "Sonarr"
+      app.description: "TV Series Manager"
+      pomctl.routes.web.from: "https://sonarr.example.com"
+      bunny.commands.sonarr.url: "{{ pomctl.routes.web.from }}"
+      bunny.commands.sonarr.description: "{{ app.name }}: {{ app.description }}"
+
+  # Cross-container duplicate (both define "prom" without alias)
+  - name: prometheus-a
+    labels:
+      bunny.commands.prom.url: "https://prometheus-a.example.com"
+      bunny.commands.prom.description: "Prometheus A"
+
+  - name: prometheus-b
+    labels:
+      bunny.commands.prom.url: "https://prometheus-b.example.com"
+      bunny.commands.prom.description: "Prometheus B"

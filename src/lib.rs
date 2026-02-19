@@ -11,6 +11,12 @@ pub mod validation;
 mod security;
 mod helpers;
 mod rate_limiting;
+pub mod docker;
+pub mod registry;
+pub mod coordinator;
+pub mod watcher;
+pub mod api;
+pub mod frontend_embed;
 
 use askama::Template;
 use axum::{
@@ -79,6 +85,8 @@ pub struct AppState {
     pub db_pool: SqlitePool,
     pub bookmark_service: std::sync::Arc<services::bookmark_service::BookmarkService>,
     pub redirect_service: std::sync::Arc<services::redirect_service::RedirectService>,
+    pub registry_state: Arc<tokio::sync::RwLock<registry::RegistrySnapshot>>,
+    pub rebuild_tx: Arc<tokio::sync::RwLock<Option<tokio::sync::mpsc::Sender<()>>>>,
 }
 
 // Route handlers
@@ -182,7 +190,7 @@ async fn redirect(
 }
 
 // Public function to create the router
-pub async fn create_router() -> Router {
+pub async fn create_router() -> (Router, Arc<AppState>) {
     // Parse CLI arguments
     let matches = clap::Command::new("Brunnylol")
         .arg(
@@ -261,6 +269,8 @@ pub async fn create_router() -> Router {
         db_pool: db_pool.clone(),
         bookmark_service: bookmark_service.clone(),
         redirect_service: Arc::new(services::redirect_service::RedirectService::new(db_pool.clone())),
+        registry_state: Arc::new(tokio::sync::RwLock::new(registry::RegistrySnapshot::default())),
+        rebuild_tx: Arc::new(tokio::sync::RwLock::new(None)),
     });
 
     // Configure rate limiting: 5 attempts per 15 minutes
@@ -293,11 +303,19 @@ pub async fn create_router() -> Router {
     let rate_limit_layer = GovernorLayer::new(governor_conf)
         .error_handler(rate_limiting::rate_limit_error_handler);
 
-    Router::new()
+    let router = Router::new()
         // Public routes
         .route("/", get(index))
         .route("/help", get(help))
         .route("/search", get(redirect))
+
+        // iron-bunny API endpoints
+        .merge(api::api_router())
+
+        // SvelteKit dashboard (served at /dashboard)
+        .route("/dashboard", get(frontend_embed::serve_frontend))
+        .route("/dashboard/", get(frontend_embed::serve_frontend))
+        .route("/dashboard/{*path}", get(frontend_embed::serve_frontend))
 
         // Auth routes (rate limited)
         .route("/login",
@@ -350,7 +368,9 @@ pub async fn create_router() -> Router {
         // Serve static files (JavaScript, CSS, etc.)
         .nest_service("/static", ServeDir::new("static"))
 
-        .with_state(state)
+        .with_state(state.clone())
         // Apply security headers to all responses
-        .layer(middleware::from_fn(security::security_headers))
+        .layer(middleware::from_fn(security::security_headers));
+
+    (router, state)
 }

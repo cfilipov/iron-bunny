@@ -29,7 +29,7 @@ async fn test_redirect_url_not_encoded() {
     .unwrap();
 
     // Create router
-    let app = brunnylol::create_router().await;
+    let (app, _state) = brunnylol::create_router().await;
 
     // Make request
     let response = app
@@ -130,7 +130,7 @@ async fn test_question_mark_suffix_on_alias_triggers_form() {
 
     // Set up environment to use test database
     std::env::set_var("BRUNNYLOL_DB", ":memory:");
-    let app = brunnylol::create_router().await;
+    let (app, _state) = brunnylol::create_router().await;
 
     // Test: "gh?" should redirect to form page (but will 404 since bookmark not in router's DB)
     // For now, just test that it doesn't crash
