@@ -1,12 +1,16 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
 
 use bollard::Docker;
 use tokio::sync::mpsc;
 use tokio::time::Instant;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 
+use crate::config::yml_settings::YmlSettings;
 use crate::docker;
+use crate::domain::template::TemplateParser;
+use crate::domain::Command;
 use crate::registry;
 use crate::AppState;
 
@@ -42,16 +46,39 @@ pub async fn full_rebuild(
     }
 
     // Step 1: Load global bookmarks from DB (existing functionality)
-    let yaml_commands = state
+    let mut yaml_commands = state
         .bookmark_service
         .load_global_bookmarks()
         .await
         .unwrap_or_else(|e| {
             error!("Failed to load global bookmarks: {}", e);
-            std::collections::HashMap::new()
+            HashMap::new()
         });
 
-    info!("Loaded {} commands from database/YAML", yaml_commands.len());
+    info!("Loaded {} commands from database", yaml_commands.len());
+
+    // Step 1b: If a config file is specified, parse it and merge with DB commands
+    if let Some(ref config_path) = config.config_path {
+        match load_config_file(config_path).await {
+            Ok(file_commands) => {
+                let file_count = file_commands.len();
+                for (alias, cmd) in file_commands {
+                    if yaml_commands.contains_key(&alias) {
+                        warn!("Config file overrides DB command '{}'", alias);
+                    }
+                    yaml_commands.insert(alias, cmd);
+                }
+                if file_count > 0 {
+                    info!("Loaded {} commands from config file", file_count);
+                }
+            }
+            Err(e) => {
+                error!("Failed to load config file '{}': {}", config_path, e);
+            }
+        }
+    }
+
+    info!("Total YAML/DB commands: {}", yaml_commands.len());
 
     // Step 2: Get Docker container labels
     let (docker_commands, docker_errors) = if config.dev_mode {
@@ -118,6 +145,49 @@ pub async fn full_rebuild(
 
     info!("Registry rebuild complete");
     Ok(())
+}
+
+/// Parse a YAML config file into a HashMap of commands.
+/// Uses the same YmlSettings format as commands.yml.
+async fn load_config_file(path: &str) -> anyhow::Result<HashMap<String, Command>> {
+    let content = tokio::fs::read_to_string(path).await?;
+    if content.trim().is_empty() {
+        return Ok(HashMap::new());
+    }
+
+    let settings: Vec<YmlSettings> = serde_yaml::from_str(&content)?;
+    let mut commands = HashMap::new();
+
+    for setting in settings {
+        let command = yml_setting_to_command(&setting)?;
+        commands.insert(setting.alias.clone(), command);
+    }
+
+    Ok(commands)
+}
+
+/// Convert a YmlSettings entry to a Command enum.
+fn yml_setting_to_command(setting: &YmlSettings) -> anyhow::Result<Command> {
+    if let Some(ref nested) = setting.nested {
+        let mut children = HashMap::new();
+        for child in nested {
+            let child_cmd = yml_setting_to_command(child)?;
+            children.insert(child.alias.clone(), child_cmd);
+        }
+        Ok(Command::Nested {
+            children,
+            description: setting.description.clone(),
+        })
+    } else {
+        let template_str = setting.command.as_deref().unwrap_or(&setting.url);
+        let template = TemplateParser::parse(template_str)?;
+        Ok(Command::Variable {
+            base_url: setting.url.clone(),
+            template,
+            description: setting.description.clone(),
+            metadata: None,
+        })
+    }
 }
 
 /// Run the rebuild loop, listening for rebuild signals from watchers.
