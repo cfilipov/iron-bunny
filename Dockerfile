@@ -28,6 +28,8 @@ COPY --from=builder /app/templates/ /app/templates/
 COPY --from=builder /app/static/ /app/static/
 COPY --from=builder /app/migrations/ /app/migrations/
 WORKDIR /app
+RUN mkdir -p /data
+VOLUME /data
 ENV BRUNNYLOL_PORT=8000
 ENV BRUNNYLOL_DB=/data/brunnylol.db
 EXPOSE 8000
