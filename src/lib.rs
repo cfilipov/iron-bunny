@@ -247,8 +247,8 @@ pub async fn create_router() -> (Router, Arc<AppState>) {
     let bookmark_service = std::sync::Arc::new(services::bookmark_service::BookmarkService::new(db_pool.clone()));
 
     // Seed global bookmarks from embedded commands.yml if DB is empty
-    // Skip seeding when an external config file is provided (iron-bunny mode)
-    if std::env::var("IRON_BUNNY_CONFIG_PATH").is_err() {
+    // Only when explicitly requested via IRON_BUNNY_SEED_DEFAULTS=true
+    if std::env::var("IRON_BUNNY_SEED_DEFAULTS").unwrap_or_default() == "true" {
         match bookmark_service.seed_global_bookmarks().await {
             Ok(count) => {
                 if count > 0 {
