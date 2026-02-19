@@ -148,7 +148,7 @@
 				<Alert.Title>Errors Detected ({errors.length})</Alert.Title>
 				<Alert.Description>
 					<div class="mt-3 space-y-2">
-						{#each errors as error (error.timestamp)}
+						{#each errors as error, i (i)}
 							<div
 								class="text-sm border-l-2 border-destructive-foreground/50 pl-3 py-1"
 							>
